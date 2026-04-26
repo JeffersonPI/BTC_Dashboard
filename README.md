@@ -4,10 +4,6 @@
 
 # 🚀 BTC Trading Dashboard (Real-Time ML)
 
-![Python](https://img.shields.io/badge/Python-3.10-blue)
-![Streamlit](https://img.shields.io/badge/Streamlit-App-red)
-![ML](https://img.shields.io/badge/Machine%20Learning-RandomForest-green)
-
 A **real-time Bitcoin trading dashboard** built with **Streamlit** and powered by **Machine Learning**.  
 This system integrates **historical data** and **live market data** to generate **price predictions** and **trading signals (BUY / SELL / HOLD)**.
 
