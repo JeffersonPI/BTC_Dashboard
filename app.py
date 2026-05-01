@@ -32,7 +32,8 @@ df_pred = df_pred[["Date", "RF_OnChain"]]
 # Merge data 
 df_plot = df_full.merge(df_pred, on="Date", how="left")
 
-df_plot["RF_OnChain"] = df_plot["RF_OnChain"].ffill().bfill()
+if "RF_OnChain" not in df_plot.columns:
+    df_plot["RF_OnChain"] = np.nan
 
 # rename & index
 df_plot = df_plot.rename(columns={"Date": "time"})
@@ -111,11 +112,17 @@ with tab1:
     start_date = st.date_input("Start Date", df_plot.index.min())
     end_date = st.date_input("End Date", df_plot.index.max())
     
+    start_date = pd.to_datetime(start_date)
+    end_date = pd.to_datetime(end_date)
+    
     zoom = st.sidebar.slider("Zoom Data", 50, 300, 120)
     
     df_zoom = df_plot.tail(zoom).copy()
-    df_filtered = df_filtered.copy()
-    df_filtered = df_plot.loc[start_date:end_date]
+    df_filtered = df_zoom.loc[start_date:end_date].copy()
+    
+    df_filtered = df_filtered.dropna(subset=["Actual"])
+    
+    df_rf = df_filtered.dropna(subset=["RF_OnChain"])
     
     if df_filtered.empty:
         st.warning("Data tidak tersedia pada rentang tanggal ini")
@@ -321,7 +328,7 @@ with tab1:
             x=df_live["time"],
             y=df_live["predicted"],
             name="Prediction",
-            mode='lines'
+            mode='lines',
             line=dict(color="yellow", dash="dot")
         ))
 
@@ -453,6 +460,15 @@ with tab2:
 
 with tab3:
     st.subheader("🧠 Insight")
+
+    if not df_rf.empty:
+        mae = np.mean(np.abs(df_rf["Actual"] - df_rf["RF_OnChain"]))
+        rmse = np.sqrt(np.mean((df_rf["Actual"] - df_rf["RF_OnChain"])**2))
+
+        st.write(f"MAE: {mae:.2f}")
+        st.write(f"RMSE: {rmse:.2f}")
+    else:
+        st.warning("Tidak ada data prediksi untuk evaluasi model")
 
     st.write("""
     1. Model mampu mengikuti tren harga Bitcoin dengan baik, namun masih memiliki keterbatasan dalam menangkap volatilitas ekstrem.
