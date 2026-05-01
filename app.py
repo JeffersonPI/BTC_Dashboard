@@ -20,12 +20,21 @@ st_autorefresh(interval=30000, key="refresh")
 
 
 # LOAD DATA (CSV)
-df_plot = pd.read_csv("btc_full.csv")
-df_plot["Date"] = pd.to_datetime(df_plot["Date"])
+df_full = pd.read_csv("btc_full.csv")
+df_full["Date"] = pd.to_datetime(df_full["Date"])
 
-if "RF_OnChain" not in df_plot.columns:
-    df_plot["RF_OnChain"] = df_plot["Actual"]
-    
+df_pred = pd.read_csv("btc_predictions.csv")
+df_pred["Date"] = pd.to_datetime(df_pred["Date"])
+
+# ambil hanya kolom yang diperlukan
+df_pred = df_pred[["Date", "RF_OnChain"]]
+
+# Merge data 
+df_plot = df_full.merge(df_pred, on="Date", how="left")
+
+df_plot["RF_OnChain"] = df_plot["RF_OnChain"].ffill().bfill()
+
+# rename & index
 df_plot = df_plot.rename(columns={"Date": "time"})
 df_plot = df_plot.set_index("time")
 
@@ -105,8 +114,8 @@ with tab1:
     zoom = st.sidebar.slider("Zoom Data", 50, 300, 120)
     
     df_zoom = df_plot.tail(zoom).copy()
-    df_filtered = df_zoom.loc[start_date:end_date]
     df_filtered = df_filtered.copy()
+    df_filtered = df_plot.loc[start_date:end_date]
     
     if df_filtered.empty:
         st.warning("Data tidak tersedia pada rentang tanggal ini")
@@ -313,6 +322,7 @@ with tab1:
             y=df_live["predicted"],
             name="Prediction",
             mode='lines'
+            line=dict(color="yellow", dash="dot")
         ))
 
         fig_live.update_layout(
