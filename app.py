@@ -22,6 +22,10 @@ st_autorefresh(interval=30000, key="refresh")
 # LOAD DATA (CSV)
 df_plot = pd.read_csv("btc_full.csv")
 df_plot["Date"] = pd.to_datetime(df_plot["Date"])
+
+if "RF_OnChain" not in df_plot.columns:
+    df_plot["RF_OnChain"] = df_plot["Actual"]
+    
 df_plot = df_plot.rename(columns={"Date": "time"})
 df_plot = df_plot.set_index("time")
 
@@ -121,9 +125,10 @@ with tab1:
 
     models = st.sidebar.multiselect(
         "Select Model",
-        ["Actual", "LR", "RF", "RF_OnChain"],
+        ["Actual", "RF_OnChain"],
         default=["Actual", "RF_OnChain"]
     )
+    models = [m for m in models if m in df_filtered.columns]
     
     st.sidebar.markdown("---")
     st.sidebar.write("📊 Real-time BTC Dashboard")
