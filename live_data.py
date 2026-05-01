@@ -35,7 +35,7 @@ class BTCModel:
 
         df["price_change"] = df["Actual"].pct_change()
         df["volatility"] = df["price_change"].rolling(7).std()
-
+ 
         df["momentum_7"] = df["Actual"] - df["Actual"].shift(7)
 
         df["rolling_max_7"] = df["Actual"].rolling(7).max()

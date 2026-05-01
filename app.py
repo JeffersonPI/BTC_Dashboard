@@ -20,15 +20,15 @@ st_autorefresh(interval=30000, key="refresh")
 
 
 # LOAD DATA (CSV)
-df_plot = pd.read_csv("btc_predictions.csv")
+df_plot = pd.read_csv("btc_full.csv")
 df_plot["Date"] = pd.to_datetime(df_plot["Date"])
-df_plot = df_plot.set_index("Date")
+df_plot = df_plot.rename(columns={"Date": "time"})
+df_plot = df_plot.set_index("time")
 
 model = joblib.load("model_rf_price.pkl")
 features = joblib.load("features.pkl")
 
-df_live_base = df_plot.reset_index()[["Date", "Actual"]].tail(100)
-df_live_base.columns = ["time", "Actual"]
+df_live_base = df_plot.reset_index()[["time", "Actual"]].tail(200)
 
 if "df_live" not in st.session_state or st.session_state.df_live is None:
     st.session_state.df_live = df_live_base.copy()
@@ -41,16 +41,28 @@ if df_live_temp is not None:
     st.session_state.df_live = pd.concat(
         [st.session_state.df_live, df_live_temp.tail(1)],
         ignore_index=True
-    ).tail(50)
+    ).tail(200)
 
-    df_live = st.session_state.df_live
+df_live = st.session_state.df_live if "df_live" in st.session_state else None
+
+# historis
+df_hist = df_plot.reset_index()[["time", "Actual"]]
+
+## cek apakah ada live data
+    
+if df_live is not None and not df_live.empty:
+        df_all = pd.concat([
+            df_hist,
+            df_live[["time", "Actual"]]
+        ], ignore_index=True)   
 else:
-    df_live = None
+    df_all = df_hist.copy()
+          
+df_all = df_all.drop_duplicates(subset="time")
+df_all = df_all.sort_values("time")    
     
-if df_live is None:
+if df_live_temp is None:
     st.warning("⚠️ Live data unavailable (API issue)")
-    
-
     
 tab1, tab2, tab3 = st.tabs(["📊 Dashboard", "📈 Chart Detail", "🧠 Insight"])
 
@@ -115,7 +127,7 @@ with tab1:
     
     st.sidebar.markdown("---")
     st.sidebar.write("📊 Real-time BTC Dashboard")
-    st.sidebar.write("🔄 Auto update every 3s")
+    st.sidebar.write("🔄 Auto update every 30s")
 
 
     # SIGNAL
@@ -184,13 +196,14 @@ with tab1:
     fig = go.Figure()
 
     for col in models:
-        fig.add_trace(go.Scatter(
-            x=df_filtered.index,
-            y=df_filtered[col],
-            mode='lines',
-            name=col,
-            line=dict(width=3 if col == "Actual" else 2)
-        ))
+        if col in df_filtered.columns:
+            fig.add_trace(go.Scatter(
+                x=df_filtered.index,
+                y=df_filtered[col],
+                mode='lines',
+                name=col,
+                line=dict(width=3 if col == "Actual" else 2)
+            ))
 
     # BUY signal
     buy = df_filtered[df_filtered["Signal"] == "BUY"]
@@ -255,15 +268,24 @@ with tab1:
         fig_live = go.Figure()
 
         fig_live.add_trace(go.Scatter(
-            x=df_live["time"],
-            y=df_live["price"],
+            x=df_all["time"],
+            y=df_all["Actual"],
             name="Price",
-            mode='lines+markers'
+            mode='lines',
+            line=dict(width=2)
         ))
 
+        df_live["signal_plot"] = df_live["signal"]
+        
+        df_live["signal_plot"] = df_live["signal_plot"].where(
+            df_live["signal_plot"] != df_live["signal_plot"].shift()
+        )
+        
+        df_live["signal_plot"] = df_live["signal_plot"].fillna("")
+        
         # SIGNAL MARKER
-        buy = df_live[df_live["signal"] == "BUY"]
-        sell = df_live[df_live["signal"] == "SELL"]
+        buy = df_live[df_live["signal_plot"] == "BUY"]
+        sell = df_live[df_live["signal_plot"] == "SELL"]
 
         fig_live.add_trace(go.Scatter(
             x=buy["time"],
