@@ -21,10 +21,10 @@ st_autorefresh(interval=30000, key="refresh")
 
 # LOAD DATA (CSV)
 df_full = pd.read_csv("btc_full.csv")
-df_full["Date"] = pd.to_datetime(df_full["Date"]).dt.date
+df_full["Date"] = pd.to_datetime(df_full["Date"])
 
 df_pred = pd.read_csv("btc_predictions.csv")
-df_pred["Date"] = pd.to_datetime(df_pred["Date"]).dt.date
+df_pred["Date"] = pd.to_datetime(df_pred["Date"])
 
 # ambil hanya kolom yang diperlukan
 df_pred = df_pred[["Date", "RF_OnChain"]]
@@ -37,12 +37,14 @@ if "RF_OnChain" not in df_plot.columns:
 
 # rename & index
 df_plot = df_plot.rename(columns={"Date": "time"})
+df_plot["time"] = pd.to_datetime(df_plot["time"])
 df_plot = df_plot.set_index("time")
 
 model = joblib.load("model_rf_price.pkl")
 features = joblib.load("features.pkl")
 
 df_live_base = df_plot.reset_index()[["time", "Actual"]].tail(200)
+df_live_base["time"] = pd.to_datetime(df_live_base["time"])
 
 if "df_live" not in st.session_state or st.session_state.df_live is None:
     st.session_state.df_live = df_live_base.copy()
@@ -57,13 +59,14 @@ if df_live_temp is not None:
         ignore_index=True
     ).tail(200)
     
+    st.session_state.df_live["time"] = pd.to_datetime(st.session_state.df_live["time"]).dt.floor("min")
     st.session_state.df_live = st.session_state.df_live.drop_duplicates(subset="time")
-
     
 df_live = st.session_state.df_live if "df_live" in st.session_state else None
 
 # historis
 df_hist = df_plot.reset_index()[["time", "Actual"]]
+df_hist["time"] = pd.to_datetime(df_hist["time"])
 
 ## cek apakah ada live data
     
@@ -74,10 +77,11 @@ if df_live is not None and not df_live.empty:
         ], ignore_index=True)   
 else:
     df_all = df_hist.copy()
-          
+
+df_all["time"] = pd.to_datetime(df_all["time"])
 df_all = df_all.drop_duplicates(subset="time")
-df_all = df_all.sort_values("time")   
-df_all = df_all.tail(300) 
+df_all = df_all.sort_values("time").reset_index(drop=True)
+df_all = df_all.tail(300)
     
 if df_live_temp is None:
     st.warning("⚠️ Live data unavailable (API issue)")
