@@ -73,7 +73,8 @@ else:
     df_all = df_hist.copy()
           
 df_all = df_all.drop_duplicates(subset="time")
-df_all = df_all.sort_values("time")    
+df_all = df_all.sort_values("time")   
+df_all = df_all.tail(300) 
     
 if df_live_temp is None:
     st.warning("⚠️ Live data unavailable (API issue)")
@@ -117,8 +118,9 @@ with tab1:
     
     zoom = st.sidebar.slider("Zoom Data", 50, 300, 120)
     
-    df_zoom = df_plot.tail(zoom).copy()
-    df_filtered = df_zoom.loc[start_date:end_date].copy()
+    df_filtered = df_plot.loc[start_date:end_date].copy()
+    
+    df_filtered = df_filtered.tail(zoom)
     
     df_filtered = df_filtered.dropna(subset=["Actual"])
     
@@ -152,7 +154,9 @@ with tab1:
 
 
     # SIGNAL
-    df_filtered["Return_Pred"] = df_filtered["RF_OnChain"].pct_change().fillna(0)
+    df_filtered["Return_Pred"] = df_filtered["RF_OnChain"].pct_change()
+    df_filtered["Return_Pred"] = df_filtered["Return_Pred"].fillna(0)
+
 
     def signal(x):
         if x > 0.002:
@@ -162,7 +166,11 @@ with tab1:
         else:
             return "HOLD"
 
-    df_filtered["Signal"] = df_filtered["Return_Pred"].apply(signal)
+    df_filtered["Signal"] = "HOLD"  # default
+
+    mask = df_filtered["RF_OnChain"].notna()
+
+    df_filtered.loc[mask, "Signal"] = df_filtered.loc[mask, "Return_Pred"].apply(signal)
 
 
     # TOP METRICS
@@ -258,7 +266,23 @@ with tab1:
         legend=dict(orientation="h", yanchor="bottom", y=1.02)
     )
 
+     # HIGHLIGHT PERIODE MODEL (2024)
+    fig.add_vrect(
+    x0="2024-01-01",
+    x1="2024-12-31",
+    fillcolor="cyan",
+    opacity=0.08,
+    layer="below",
+    line_width=0,
+    annotation_text="Model Training Period",
+    annotation_position="top left"
+    )
+    
     st.plotly_chart(fig, use_container_width=True)
+    
+    st.caption("⚠️ RF_OnChain hanya tersedia pada periode training (2024), sehingga tidak muncul di seluruh rentang waktu.")
+    
+   
     
     ## LIVE PANEL
     if latest_live is not None:
