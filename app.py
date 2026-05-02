@@ -21,31 +21,29 @@ st_autorefresh(interval=30000, key="refresh")
 
 # LOAD DATA (CSV)
 df_full = pd.read_csv("btc_full.csv")
-df_full["Date"] = pd.to_datetime(df_full["Date"])
-
 df_pred = pd.read_csv("btc_predictions.csv")
+
+
+df_full["Date"] = pd.to_datetime(df_full["Date"])
 df_pred["Date"] = pd.to_datetime(df_pred["Date"])
 
-# ambil hanya kolom yang diperlukan
-df_pred = df_pred[["Date", "RF_OnChain"]]
+df_full = df_full.set_index("Date")
+df_pred = df_pred.set_index("Date")[["RF_OnChain"]]
 
-# Merge data 
-df_plot = df_full.merge(df_pred, on="Date", how="left")
+df_plot = df_full.join(df_pred, how="left")
+df_plot = df_plot.sort_index()
 
-df_plot["RF_OnChain"] = df_plot["RF_OnChain"].ffill()
 
 if "RF_OnChain" not in df_plot.columns:
     df_plot["RF_OnChain"] = np.nan
 
-# rename & index
-df_plot = df_plot.rename(columns={"Date": "time"})
-df_plot["time"] = pd.to_datetime(df_plot["time"])
-df_plot = df_plot.set_index("time")
+df_plot.index = pd.to_datetime(df_plot.index)
 
 model = joblib.load("model_rf_price.pkl")
 features = joblib.load("features.pkl")
 
-df_live_base = df_plot.reset_index()[["time", "Actual"]].tail(200)
+df_live_base = df_plot.reset_index()[["Date", "Actual"]].tail(200)
+df_live_base = df_live_base.rename(columns={"Date": "time"})
 df_live_base["time"] = pd.to_datetime(df_live_base["time"])
 
 if "df_live" not in st.session_state or st.session_state.df_live is None:
@@ -67,7 +65,8 @@ if df_live_temp is not None:
 df_live = st.session_state.df_live if "df_live" in st.session_state else None
 
 # historis
-df_hist = df_plot.reset_index()[["time", "Actual"]]
+df_hist = df_plot.reset_index()[["Date", "Actual"]]
+df_hist = df_hist.rename(columns={"Date": "time"})
 df_hist["time"] = pd.to_datetime(df_hist["time"])
 
 ## cek apakah ada live data
@@ -84,7 +83,20 @@ df_all["time"] = pd.to_datetime(df_all["time"], errors="coerce")
 df_all = df_all.dropna(subset=["time"])
 df_all = df_all.drop_duplicates(subset="time")
 df_all = df_all.sort_values("time")
-df_all = df_all.tail(300)
+
+df_rf = df_plot.reset_index()[["Date", "RF_OnChain"]]
+df_rf = df_rf.rename(columns={"Date": "time"})
+
+df_all["time"] = pd.to_datetime(df_all["time"]).dt.floor("D")
+df_rf["time"] = pd.to_datetime(df_rf["time"]).dt.floor("D")
+
+df_all = df_all.merge(df_rf, on="time", how="left")
+
+df_all["RF_OnChain"] = df_all["RF_OnChain"].where(
+    (df_all["time"] >= "2024-01-01") &
+    (df_all["time"] <= "2024-12-31")
+)
+
     
 if df_live_temp is None:
     st.warning("⚠️ Live data unavailable (API issue)")
@@ -121,8 +133,8 @@ with tab1:
     st.subheader("📅 Filter Date")
 
     # ambil range data asli
-    min_date = df_plot["RF_OnChain"].dropna().index.min()
-    max_date = df_plot["RF_OnChain"].dropna().index.max()
+    min_date = df_plot.index.min()
+    max_date = df_all["time"].max()
 
     start_date = st.date_input(
         "Start Date",
@@ -141,19 +153,28 @@ with tab1:
     start_date = pd.to_datetime(start_date)
     end_date = pd.to_datetime(end_date)
     
-    zoom = st.sidebar.slider("Zoom Data", 50, 300, 120)
-    
-    df_filtered = df_plot.copy()
+    df_all = df_all.set_index("time")
 
+    df_filtered = df_all.copy()
+
+    # handle RF_OnChain (karena live gak punya)
+    if "RF_OnChain" not in df_filtered.columns:
+        df_filtered["RF_OnChain"] = np.nan
+    
     #FILTER DATE
     df_filtered = df_filtered[
     (df_filtered.index >= start_date) &
     (df_filtered.index <= end_date)
     ]
 
+    zoom = st.sidebar.slider("Zoom Data", 50, len(df_filtered), len(df_filtered))
+    
+    
     # SORT + ZOOM
     df_filtered = df_filtered.sort_index()
-    df_filtered = df_filtered.tail(zoom)
+
+    if len(df_filtered) > zoom:
+        df_filtered = df_filtered.tail(zoom)
     
     df_filtered = df_filtered.dropna(subset=["Actual"])
     
@@ -192,7 +213,7 @@ with tab1:
     df_filtered["Return_Pred"] = (
         df_filtered["RF_OnChain"]
         .pct_change()
-        .rolling(3)
+        .rolling(5)
         .mean()
     )
 
@@ -266,21 +287,24 @@ with tab1:
 
     fig = go.Figure()
 
-    for col in models:
-        if col in df_filtered.columns:
-            if col == "RF_OnChain":
-                df_temp = df_filtered.dropna(subset=["RF_OnChain"])
-            else:
-                df_temp = df_filtered
+    fig.add_trace(go.Scatter(
+        x=df_filtered.index,
+        y=df_filtered["Actual"],
+        name="Actual",
+        line=dict(width=3)
+    ))
 
-            fig.add_trace(go.Scatter(
-                x=df_temp.index,
-                y=df_temp[col],
-                mode='lines',
-                name=col,
-                line=dict(width=3 if col == "Actual" else 2)
-             ))
+    # RF_OnChain (HANYA YANG ADA)
+    if "RF_OnChain" in models:
+        rf = df_filtered[df_filtered["RF_OnChain"].notna()]
 
+        fig.add_trace(go.Scatter(
+            x=rf.index,
+            y=rf["RF_OnChain"],
+            name="RF_OnChain",
+            line=dict(width=2)
+        ))
+        
     # BUY signal
     buy = df_filtered[df_filtered["Signal"] == "BUY"]
     fig.add_trace(go.Scatter(
@@ -314,23 +338,26 @@ with tab1:
     )
 
      # HIGHLIGHT PERIODE MODEL (2024)
+    train_start = pd.to_datetime("2024-01-01")
+    train_end = pd.to_datetime("2024-12-31")
+
     fig.add_vrect(
-        x0=min_date,
-        x1=max_date,
-    fillcolor="cyan",
-    opacity=0.08,
-    layer="below",
-    line_width=0,
-    annotation_text="Model Training Period",
-    annotation_position="top left"
+        x0=train_start,
+        x1=train_end,
+        fillcolor="cyan",
+        opacity=0.08,
+        layer="below",
+        line_width=0,
+        annotation_text="Model Training Period",
+        annotation_position="top left"
     )
     
     st.plotly_chart(fig, use_container_width=True)
     
     st.caption("⚠️ RF_OnChain hanya tersedia pada periode training (2024)")
     st.caption("⚠️ RF_OnChain di luar 2024 adalah hasil forward fill (bukan prediksi asli)")
-    
-   
+    st.caption("⚠️ RF_OnChain hanya muncul saat model menghasilkan prediksi (tidak selalu dari awal tahun)")
+
     
     ## LIVE PANEL
     if latest_live is not None:
@@ -448,26 +475,102 @@ with tab1:
     # PROFIT SIMULATION
     st.markdown("## 💰 Trading Simulation")
     
+    st.caption("📌 Trading simulation hanya menggunakan data training (2024)")
+    st.caption("📌 Signal hanya tersedia pada periode training (2024). Data setelahnya tidak memiliki prediksi model.")
+    st.caption("📊 Signal pada chart dan simulation menggunakan metode berbeda (rule-based vs hybrid ML)")
+    st.caption("📊 Signal pada chart berasal dari hasil trading simulation (hybrid ML + rule-based)")
+        
+    df_sim = df_plot.reset_index().copy()
+
+    df_sim = df_sim.drop_duplicates(subset="Date")
+    df_sim = df_sim.sort_values("Date")
+    df_sim = df_sim.rename(columns={"Date": "time"})
+    
+    df_sim["time"] = pd.to_datetime(df_sim["time"])
+    df_sim = df_sim[df_sim["time"] <= "2024-12-31"]
+
+    df_sim["ret"] = df_sim["Actual"].pct_change().rolling(3).mean()
+
     balance = initial_balance
     position = 0
     portfolio = []
+    signals_sim = []
 
-    for i in range(len(df_filtered)):
-        s = df_filtered["Signal"].iloc[i]
-        price = df_filtered["Actual"].iloc[i]
+    window_size = 50
+    threshold_ml = 0.0005
+    threshold_rule = 0.001
 
-        if s == "BUY" and position == 0:
+    for i in range(len(df_sim)):
+        price = df_sim["Actual"].iloc[i]
+        signal = "HOLD"
+
+        if i > 0:
+            r = df_sim["ret"].iloc[i]
+            if r > threshold_rule:
+                signal_rule = "BUY"
+            elif r < -threshold_rule:
+                signal_rule = "SELL"
+            else:
+                signal_rule = "HOLD"
+        else:
+            signal_rule = "HOLD"
+
+        if i >= window_size:
+            df_window = df_sim.iloc[:i][["time", "Actual"]].copy()
+
+            try:
+                pred = btc_model.predict(df_window, price)
+                signal_ml = btc_model.generate_signal(pred, price)
+
+                ret_ml = (pred - price) / price
+
+                if signal_ml == signal_rule:
+                    signal = signal_ml
+                elif abs(ret_ml) > threshold_ml * 2:
+                    signal = signal_ml
+                else:
+                    signal = signal_rule
+
+            except:
+                signal = signal_rule
+        else:
+            signal = signal_rule
+
+        if signal == "BUY" and position == 0:
             position = balance / price
             balance = 0
 
-        elif s == "SELL" and position > 0:
+        elif signal == "SELL" and position > 0:
             balance = position * price
             position = 0
 
         total = balance + (position * price)
+        if len(portfolio) > 0:
+            total = (total + portfolio[-1]) / 2
+        
+        signals_sim.append(signal) 
         portfolio.append(total)
 
-    df_filtered["Portfolio"] = portfolio
+    df_sim["Portfolio"] = portfolio
+    df_sim["Signal"] = signals_sim
+    
+    df_sim_map = df_sim[["time", "Signal"]].copy()
+    df_sim_map["time"] = pd.to_datetime(df_sim_map["time"])
+
+    df_filtered = df_filtered.reset_index()
+    df_filtered["time"] = pd.to_datetime(df_filtered["time"])
+
+    df_filtered = df_filtered.merge(
+        df_sim_map,
+        on="time",
+        how="left",
+        suffixes=("", "_sim")
+    )
+
+    # 🔥 OVERWRITE SIGNAL CHART
+    df_filtered["Signal"] = df_filtered["Signal_sim"].fillna(df_filtered["Signal"])
+
+    df_filtered = df_filtered.set_index("time")
 
     final = portfolio[-1]
     profit = (final - initial_balance) / initial_balance * 100
@@ -484,8 +587,8 @@ with tab1:
     fig_port = go.Figure()
 
     fig_port.add_trace(go.Scatter(
-    x=df_filtered.index,
-    y=df_filtered["Portfolio"],
+    x=df_sim["time"],
+    y=df_sim["Portfolio"],
     name="Portfolio"
     ))
     
