@@ -78,9 +78,10 @@ if df_live is not None and not df_live.empty:
 else:
     df_all = df_hist.copy()
 
-df_all["time"] = pd.to_datetime(df_all["time"])
+df_all["time"] = pd.to_datetime(df_all["time"], errors="coerce")
+df_all = df_all.dropna(subset=["time"])
 df_all = df_all.drop_duplicates(subset="time")
-df_all = df_all.sort_values("time").reset_index(drop=True)
+df_all = df_all.sort_values("time")
 df_all = df_all.tail(300)
     
 if df_live_temp is None:
@@ -174,6 +175,7 @@ with tab1:
 
 
     def signal(x):
+                
         if x > 0.001:
             return "BUY"
         elif x < -0.001:
@@ -327,25 +329,37 @@ with tab1:
 
         fig_live = go.Figure()
 
+        # HISTORICAL
         fig_live.add_trace(go.Scatter(
-            x=df_all["time"],
-            y=df_all["Actual"],
-            name="Price",
+        x=df_hist["time"],
+        y=df_hist["Actual"],
+        name="Historical",
+        mode='lines',
+        line=dict(width=1)
+        ))
+
+        # LIVE
+        fig_live.add_trace(go.Scatter(
+            x=df_live["time"],
+            y=df_live["Actual"],
+            name="Live",
             mode='lines',
             line=dict(width=2)
         ))
+        
+        df_live_plot = df_live.copy()
+        
+        df_live_plot["signal_plot"] = df_live_plot["signal"]
 
-        df_live["signal_plot"] = df_live["signal"]
-        
-        df_live["signal_plot"] = df_live["signal_plot"].where(
-            df_live["signal_plot"] != df_live["signal_plot"].shift()
+        df_live_plot["signal_plot"] = df_live_plot["signal_plot"].where(
+        df_live_plot["signal_plot"] != df_live_plot["signal_plot"].shift()
         )
-        
-        df_live["signal_plot"] = df_live["signal_plot"].fillna("")
+
+        df_live_plot["signal_plot"] = df_live_plot["signal_plot"].fillna("")
         
         # SIGNAL MARKER
-        buy = df_live[df_live["signal_plot"] == "BUY"]
-        sell = df_live[df_live["signal_plot"] == "SELL"]
+        buy = df_live_plot[df_live["signal_plot"] == "BUY"]
+        sell = df_live_plot[df_live["signal_plot"] == "SELL"]
 
         fig_live.add_trace(go.Scatter(
             x=buy["time"],
@@ -367,8 +381,9 @@ with tab1:
             x=df_live["time"],
             y=df_live["predicted"],
             name="Prediction",
-            mode='lines',
-            line=dict(color="yellow", dash="dot")
+            mode='markers+lines',
+            line=dict(color="yellow", dash="dot"),
+            connectgaps=True
         ))
 
         fig_live.update_layout(
@@ -394,7 +409,7 @@ with tab1:
         st.plotly_chart(fig_live, use_container_width=True)
         
         with st.expander("📄 Live Data (Debug)"):
-            st.dataframe(df_live.tail(10))
+            st.dataframe(df_live_plot.tail(10))
 
 
     # PROFIT SIMULATION
