@@ -358,8 +358,8 @@ with tab1:
         df_live_plot["signal_plot"] = df_live_plot["signal_plot"].fillna("")
         
         # SIGNAL MARKER
-        buy = df_live_plot[df_live["signal_plot"] == "BUY"]
-        sell = df_live_plot[df_live["signal_plot"] == "SELL"]
+        buy = df_live_plot[df_live_plot["signal_plot"] == "BUY"]
+        sell = df_live_plot[df_live_plot["signal_plot"] == "SELL"]
 
         fig_live.add_trace(go.Scatter(
             x=buy["time"],
