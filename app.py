@@ -21,10 +21,10 @@ st_autorefresh(interval=30000, key="refresh")
 
 # LOAD DATA (CSV)
 df_full = pd.read_csv("btc_full.csv")
-df_full["Date"] = pd.to_datetime(df_full["Date"])
+df_full["Date"] = pd.to_datetime(df_full["Date"]).dt.date
 
 df_pred = pd.read_csv("btc_predictions.csv")
-df_pred["Date"] = pd.to_datetime(df_pred["Date"])
+df_pred["Date"] = pd.to_datetime(df_pred["Date"]).dt.date
 
 # ambil hanya kolom yang diperlukan
 df_pred = df_pred[["Date", "RF_OnChain"]]
@@ -56,7 +56,10 @@ if df_live_temp is not None:
         [st.session_state.df_live, df_live_temp.tail(1)],
         ignore_index=True
     ).tail(200)
+    
+    st.session_state.df_live = st.session_state.df_live.drop_duplicates(subset="time")
 
+    
 df_live = st.session_state.df_live if "df_live" in st.session_state else None
 
 # historis
@@ -118,8 +121,16 @@ with tab1:
     
     zoom = st.sidebar.slider("Zoom Data", 50, 300, 120)
     
-    df_filtered = df_plot.loc[start_date:end_date].copy()
-    
+    df_filtered = df_plot.copy()
+
+    #FILTER DATE
+    df_filtered = df_filtered[
+    (df_filtered.index >= start_date) &
+    (df_filtered.index <= end_date)
+    ]
+
+    # SORT + ZOOM
+    df_filtered = df_filtered.sort_index()
     df_filtered = df_filtered.tail(zoom)
     
     df_filtered = df_filtered.dropna(subset=["Actual"])
@@ -159,9 +170,9 @@ with tab1:
 
 
     def signal(x):
-        if x > 0.002:
+        if x > 0.001:
             return "BUY"
-        elif x < -0.002:
+        elif x < -0.001:
             return "SELL"
         else:
             return "HOLD"
