@@ -95,7 +95,7 @@ tab1, tab2, tab3 = st.tabs(["📊 Dashboard", "📈 Chart Detail", "🧠 Insight
 if df_plot.empty:
     st.warning("No data available for selected date range")
     st.stop()
-
+    
 # LOAD CSS
 def load_css():
     css_path = os.path.join(os.path.dirname(__file__), "styles.css")
@@ -126,12 +126,16 @@ with tab1:
 
     start_date = st.date_input(
         "Start Date",
-        value=pd.to_datetime("2024-01-01")
+        value=min_date,
+        min_value=min_date,
+        max_value=max_date
     )
-
+    
     end_date = st.date_input(
         "End Date",
-        value=pd.to_datetime("2024-12-31")
+        value=max_date,
+        min_value=min_date,
+        max_value=max_date
     )
     
     start_date = pd.to_datetime(start_date)
@@ -146,7 +150,6 @@ with tab1:
     (df_filtered.index >= start_date) &
     (df_filtered.index <= end_date)
     ]
-    df_filtered = df_filtered.dropna(subset=["Actual"])
 
     # SORT + ZOOM
     df_filtered = df_filtered.sort_index()
@@ -154,10 +157,12 @@ with tab1:
     
     df_filtered = df_filtered.dropna(subset=["Actual"])
     
-    df_rf = df_filtered.dropna(subset=["RF_OnChain"])
-    
     if df_filtered.empty:
         st.warning("Data tidak tersedia pada rentang tanggal ini")
+        st.stop()
+    
+    if len(df_filtered) < 5:
+        st.warning("Data terlalu sedikit untuk analisis")
         st.stop()
     
     # SIDEBAR
@@ -184,7 +189,13 @@ with tab1:
 
 
     # SIGNAL
-    df_filtered["Return_Pred"] = df_filtered["RF_OnChain"].pct_change()
+    df_filtered["Return_Pred"] = (
+        df_filtered["RF_OnChain"]
+        .pct_change()
+        .rolling(3)
+        .mean()
+    )
+
     df_filtered["Return_Pred"] = df_filtered["Return_Pred"].fillna(0)
 
 
@@ -262,13 +273,13 @@ with tab1:
             else:
                 df_temp = df_filtered
 
-        fig.add_trace(go.Scatter(
-            x=df_temp.index,
-            y=df_temp[col],
-            mode='lines',
-            name=col,
-            line=dict(width=3 if col == "Actual" else 2)
-        ))
+            fig.add_trace(go.Scatter(
+                x=df_temp.index,
+                y=df_temp[col],
+                mode='lines',
+                name=col,
+                line=dict(width=3 if col == "Actual" else 2)
+             ))
 
     # BUY signal
     buy = df_filtered[df_filtered["Signal"] == "BUY"]
@@ -304,8 +315,8 @@ with tab1:
 
      # HIGHLIGHT PERIODE MODEL (2024)
     fig.add_vrect(
-    x0="2024-01-01",
-    x1="2024-12-31",
+        x0=min_date,
+        x1=max_date,
     fillcolor="cyan",
     opacity=0.08,
     layer="below",
@@ -316,7 +327,8 @@ with tab1:
     
     st.plotly_chart(fig, use_container_width=True)
     
-    st.caption("⚠️ RF_OnChain hanya tersedia pada periode training (2024), sehingga tidak muncul di seluruh rentang waktu.")
+    st.caption("⚠️ RF_OnChain hanya tersedia pada periode training (2024)")
+    st.caption("⚠️ RF_OnChain di luar 2024 adalah hasil forward fill (bukan prediksi asli)")
     
    
     
@@ -345,9 +357,11 @@ with tab1:
     ## LIVE TREND CHART
     if df_live is not None and "signal" in df_live.columns:
         st.markdown("## 📡 Live BTC Trend")
+        
+        df_live = df_live.sort_values("time")
 
         fig_live = go.Figure()
-
+        
         # HISTORICAL
         fig_live.add_trace(go.Scatter(
         x=df_hist["time"],
@@ -433,8 +447,6 @@ with tab1:
 
     # PROFIT SIMULATION
     st.markdown("## 💰 Trading Simulation")
-
-    st.caption("⚠️ Trading simulation hanya tersedia pada data training (2024)")
     
     balance = initial_balance
     position = 0
