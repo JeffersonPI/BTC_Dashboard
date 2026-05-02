@@ -32,6 +32,8 @@ df_pred = df_pred[["Date", "RF_OnChain"]]
 # Merge data 
 df_plot = df_full.merge(df_pred, on="Date", how="left")
 
+df_plot["RF_OnChain"] = df_plot["RF_OnChain"].ffill()
+
 if "RF_OnChain" not in df_plot.columns:
     df_plot["RF_OnChain"] = np.nan
 
@@ -91,7 +93,7 @@ tab1, tab2, tab3 = st.tabs(["📊 Dashboard", "📈 Chart Detail", "🧠 Insight
 
 # SAFETY CHECK
 if df_plot.empty:
-    st.error("Data kosong! Cek CSV.")
+    st.warning("No data available for selected date range")
     st.stop()
 
 # LOAD CSS
@@ -118,8 +120,19 @@ with tab1:
     # Date Range Picker
     st.subheader("📅 Filter Date")
 
-    start_date = st.date_input("Start Date", df_plot.index.min())
-    end_date = st.date_input("End Date", df_plot.index.max())
+    # ambil range data asli
+    min_date = df_plot["RF_OnChain"].dropna().index.min()
+    max_date = df_plot["RF_OnChain"].dropna().index.max()
+
+    start_date = st.date_input(
+        "Start Date",
+        value=pd.to_datetime("2024-01-01")
+    )
+
+    end_date = st.date_input(
+        "End Date",
+        value=pd.to_datetime("2024-12-31")
+    )
     
     start_date = pd.to_datetime(start_date)
     end_date = pd.to_datetime(end_date)
@@ -133,6 +146,7 @@ with tab1:
     (df_filtered.index >= start_date) &
     (df_filtered.index <= end_date)
     ]
+    df_filtered = df_filtered.dropna(subset=["Actual"])
 
     # SORT + ZOOM
     df_filtered = df_filtered.sort_index()
@@ -243,13 +257,18 @@ with tab1:
 
     for col in models:
         if col in df_filtered.columns:
-            fig.add_trace(go.Scatter(
-                x=df_filtered.index,
-                y=df_filtered[col],
-                mode='lines',
-                name=col,
-                line=dict(width=3 if col == "Actual" else 2)
-            ))
+            if col == "RF_OnChain":
+                df_temp = df_filtered.dropna(subset=["RF_OnChain"])
+            else:
+                df_temp = df_filtered
+
+        fig.add_trace(go.Scatter(
+            x=df_temp.index,
+            y=df_temp[col],
+            mode='lines',
+            name=col,
+            line=dict(width=3 if col == "Actual" else 2)
+        ))
 
     # BUY signal
     buy = df_filtered[df_filtered["Signal"] == "BUY"]
@@ -415,6 +434,8 @@ with tab1:
     # PROFIT SIMULATION
     st.markdown("## 💰 Trading Simulation")
 
+    st.caption("⚠️ Trading simulation hanya tersedia pada data training (2024)")
+    
     balance = initial_balance
     position = 0
     portfolio = []
@@ -513,17 +534,7 @@ with tab2:
     st.plotly_chart(fig2, use_container_width=True)
 
 with tab3:
-    st.subheader("🧠 Insight")
-
-    if not df_rf.empty:
-        mae = np.mean(np.abs(df_rf["Actual"] - df_rf["RF_OnChain"]))
-        rmse = np.sqrt(np.mean((df_rf["Actual"] - df_rf["RF_OnChain"])**2))
-
-        st.write(f"MAE: {mae:.2f}")
-        st.write(f"RMSE: {rmse:.2f}")
-    else:
-        st.warning("Tidak ada data prediksi untuk evaluasi model")
-
+    
     st.write("""
     1. Model mampu mengikuti tren harga Bitcoin dengan baik, namun masih memiliki keterbatasan dalam menangkap volatilitas ekstrem.
 
