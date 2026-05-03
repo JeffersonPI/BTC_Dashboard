@@ -622,7 +622,7 @@ with tab1:
         .sort_values("time", ascending=False)
         .style
         .format({"Actual": "{:,.0f}"})
-        .applymap(color_signal, subset=["Signal"])
+        .map(color_signal, subset=["Signal"])
     )
 with tab2:
     st.subheader("📈 Full Chart")
