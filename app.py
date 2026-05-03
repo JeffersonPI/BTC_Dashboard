@@ -355,7 +355,6 @@ with tab1:
     st.plotly_chart(fig, use_container_width=True)
     
     st.caption("⚠️ RF_OnChain hanya tersedia pada periode training (2024)")
-    st.caption("⚠️ RF_OnChain di luar 2024 adalah hasil forward fill (bukan prediksi asli)")
     st.caption("⚠️ RF_OnChain hanya muncul saat model menghasilkan prediksi (tidak selalu dari awal tahun)")
 
     
@@ -472,70 +471,53 @@ with tab1:
             st.dataframe(df_live_plot.tail(10))
 
 
-    # PROFIT SIMULATION
+    # 💰 PROFIT SIMULATION
     st.markdown("## 💰 Trading Simulation")
-    
+
     st.caption("📌 Trading simulation hanya menggunakan data training (2024)")
-    st.caption("📌 Signal hanya tersedia pada periode training (2024). Data setelahnya tidak memiliki prediksi model.")
-    st.caption("📊 Signal pada chart dan simulation menggunakan metode berbeda (rule-based vs hybrid ML)")
-    st.caption("📊 Signal pada chart berasal dari hasil trading simulation (hybrid ML + rule-based)")
-        
+    st.caption("📌 Menggunakan rule-based strategy untuk efisiensi dan stabilitas sistem")
+
+    # 🔥 PREP DATA
     df_sim = df_plot.reset_index().copy()
 
     df_sim = df_sim.drop_duplicates(subset="Date")
     df_sim = df_sim.sort_values("Date")
     df_sim = df_sim.rename(columns={"Date": "time"})
-    
+
     df_sim["time"] = pd.to_datetime(df_sim["time"])
     df_sim = df_sim[df_sim["time"] <= "2024-12-31"]
 
+    # 🔥 LIMIT DATA (biar ringan)
+    df_sim = df_sim.tail(365)
+
+    # 🔥 FEATURE (RINGAN)
     df_sim["ret"] = df_sim["Actual"].pct_change().rolling(3).mean()
 
+    # 🔥 INIT
     balance = initial_balance
     position = 0
     portfolio = []
     signals_sim = []
 
-    window_size = 50
-    threshold_ml = 0.0005
-    threshold_rule = 0.001
+    threshold = 0.001
 
+    # 🔥 LOOP (TANPA ML)
     for i in range(len(df_sim)):
         price = df_sim["Actual"].iloc[i]
-        signal = "HOLD"
 
         if i > 0:
             r = df_sim["ret"].iloc[i]
-            if r > threshold_rule:
-                signal_rule = "BUY"
-            elif r < -threshold_rule:
-                signal_rule = "SELL"
+
+            if r > threshold:
+                signal = "BUY"
+            elif r < -threshold:
+                signal = "SELL"
             else:
-                signal_rule = "HOLD"
+                signal = "HOLD"
         else:
-            signal_rule = "HOLD"
+            signal = "HOLD"
 
-        if i >= window_size:
-            df_window = df_sim.iloc[:i][["time", "Actual"]].copy()
-
-            try:
-                pred = btc_model.predict(df_window, price)
-                signal_ml = btc_model.generate_signal(pred, price)
-
-                ret_ml = (pred - price) / price
-
-                if signal_ml == signal_rule:
-                    signal = signal_ml
-                elif abs(ret_ml) > threshold_ml * 2:
-                    signal = signal_ml
-                else:
-                    signal = signal_rule
-
-            except:
-                signal = signal_rule
-        else:
-            signal = signal_rule
-
+        # 🔥 EXECUTION
         if signal == "BUY" and position == 0:
             position = balance / price
             balance = 0
@@ -545,15 +527,14 @@ with tab1:
             position = 0
 
         total = balance + (position * price)
-        if len(portfolio) > 0:
-            total = (total + portfolio[-1]) / 2
-        
-        signals_sim.append(signal) 
         portfolio.append(total)
+        signals_sim.append(signal)
 
+    # 🔥 SAVE RESULT
     df_sim["Portfolio"] = portfolio
     df_sim["Signal"] = signals_sim
-    
+
+    # 🔥 MAP KE CHART (BIAR CONSISTENT)
     df_sim_map = df_sim[["time", "Signal"]].copy()
     df_sim_map["time"] = pd.to_datetime(df_sim_map["time"])
 
@@ -567,14 +548,13 @@ with tab1:
         suffixes=("", "_sim")
     )
 
-    # 🔥 OVERWRITE SIGNAL CHART
     df_filtered["Signal"] = df_filtered["Signal_sim"].fillna(df_filtered["Signal"])
-
     df_filtered = df_filtered.set_index("time")
 
+    # 🔥 RESULT
     final = portfolio[-1]
     profit = (final - initial_balance) / initial_balance * 100
-
+    
     colA, colB = st.columns(2)
     colA.metric("💵 Final Balance", f"${final:,.2f}")
     colB.metric(
@@ -615,18 +595,35 @@ with tab1:
     st.plotly_chart(fig_port, use_container_width=True)
     
     # TABLE
-    st.markdown("## 📄 Recent Signals")
-    st.dataframe(
-        df_filtered[["Actual", "RF_OnChain", "Signal"]]
-        .tail(10)
-        .style.format({
-            "Actual": "{:,.0f}",
-            "RF_OnChain": "{:,.0f}"
-        })
-    )
+    st.markdown("## 📄 Recent Signals (Training Data 2024)")
 
-    st.caption("⚡ Powered by Machine Learning + Real-Time Data")
+    st.caption("📌 Menampilkan sinyal trading dari hasil simulasi pada periode training (2024)")
+
+    df_recent = df_sim.copy()
+
+    df_recent["time"] = pd.to_datetime(df_recent["time"])
+
+    df_recent = df_recent[
+        (df_recent["time"] >= "2024-01-01") &
+        (df_recent["time"] <= "2024-12-31")
+    ]
+
+    df_recent = df_recent.tail(400)
     
+    def color_signal(val):
+        if val == "BUY":
+            return "color: green"
+        elif val == "SELL":
+            return "color: red"
+        return "color: gray"
+
+    st.dataframe(
+        df_recent[["time", "Actual", "Signal"]]
+        .sort_values("time", ascending=False)
+        .style
+        .format({"Actual": "{:,.0f}"})
+        .applymap(color_signal, subset=["Signal"])
+    )
 with tab2:
     st.subheader("📈 Full Chart")
 
